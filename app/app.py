@@ -1259,27 +1259,20 @@ async def broadcast_start(callback: types.CallbackQuery, state: FSMContext):
 
 
 # --- Основная функция ---
+# --- Основная функция ---
 async def main():
     """Запуск бота в режиме polling (без вебхуков и веб-сервера)."""
-    global db_pool
-    logging.basicConfig(level=logging.INFO)
+    await create_db_pool()
+    if not db_pool:
+        logging.critical("Не удалось подключиться к базе данных. Запуск отменен.")
+        return
 
-    # Инициализация базы данных
-    db_pool = await asyncpg.create_pool(
-        host=DB_HOST, port=DB_PORT, user=DB_USER,
-        password=DB_PASSWORD, database=DB_NAME,
-    )
-    logging.info("Пул подключений к базе данных успешно создан")
-
-    # Инициализация бота и диспетчера
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher(storage=MemoryStorage())
-
-    # Регистрация всех роутеров/хендлеров (оставьте как было в вашем коде)
-    # ... здесь должны быть dp.include_router(...) из оригинального файла ...
-
-    # Удаляем вебхук, если он был установлен ранее
-    await bot.delete_webhook(drop_pending_updates=True)
+    # Удаляем старый вебхук, если он был установлен
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("Старый вебхук удалён")
+    except Exception as e:
+        logging.warning(f"Не удалось удалить вебхук: {e}")
 
     # Уведомляем админа о запуске
     try:
@@ -1287,7 +1280,10 @@ async def main():
         total_servers = await get_total_servers_count()
         admin_rec = await get_user_by_telegram_id(ADMIN_ID)
         if admin_rec:
-            await bot.send_message(ADMIN_ID, await get_status_message_text(admin_rec, total_users, total_servers))
+            await bot.send_message(
+                ADMIN_ID,
+                await get_status_message_text(admin_rec, total_users, total_servers)
+            )
     except Exception as e:
         logging.warning(f"Не удалось отправить стартовое сообщение: {e}")
 
