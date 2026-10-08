@@ -1298,5 +1298,41 @@ async def main():
         logging.info("Бот остановлен.")
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+async def main():
+    """Запуск бота в режиме polling (без вебхуков и веб-сервера)."""
+    await create_db_pool()
+    if not db_pool:
+        logging.critical("Не удалось подключиться к базе данных. Запуск отменен.")
+        return
+
+    # Удаляем старый вебхук, если он был установлен
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logging.info("Старый вебхук удалён")
+    except Exception as e:
+        logging.warning(f"Не удалось удалить вебхук: {e}")
+
+    # Уведомляем админа о запуске
+    try:
+        total_users = await get_total_users_count()
+        total_servers = await get_total_servers_count()
+        admin_rec = await get_user_by_telegram_id(ADMIN_ID)
+        if admin_rec:
+            await bot.send_message(
+                ADMIN_ID,
+                await get_status_message_text(admin_rec, total_users, total_servers)
+            )
+    except Exception as e:
+        logging.warning(f"Не удалось отправить стартовое сообщение: {e}")
+
+    logging.info("Бот запущен в режиме polling")
+
+    try:
+        await dp.start_polling(bot)
+    finally:
+        if db_pool:
+            await db_pool.close()
+        await bot.session.close()
+        logging.info("Бот остановлен.")
+
+
