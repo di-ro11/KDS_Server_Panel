@@ -1336,3 +1336,7 @@ async def main():
         logging.info("Бот остановлен.")
 
 
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
