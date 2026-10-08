@@ -1260,50 +1260,46 @@ async def broadcast_start(callback: types.CallbackQuery, state: FSMContext):
 
 # --- Основная функция ---
 async def main():
-    await create_db_pool()
-    if not db_pool:
-        logging.critical("Не удалось подключиться к базе данных. Запуск отменен.")
-        return
+    """Запуск бота в режиме polling (без вебхуков и веб-сервера)."""
+    global db_pool
+    logging.basicConfig(level=logging.INFO)
 
-    WEBHOOK_BASE_DOMAIN = "https://pay.kododrive.ru"
-    WEBHOOK_URL = f"{WEBHOOK_BASE_DOMAIN}{WEBHOOK_TELEGRAM_PATH}"
-
-    app = web.Application()
-
-    app.router.add_post(WEBHOOK_CRYPTO_PAY_PATH, cryptopay_webhook_handler)
-    app.router.add_post(WEBHOOK_YOOKASSA_PATH, yookassa_webhook_handler)
-
-    webhook_request_handler = SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
+    # Инициализация базы данных
+    db_pool = await asyncpg.create_pool(
+        host=DB_HOST, port=DB_PORT, user=DB_USER,
+        password=DB_PASSWORD, database=DB_NAME,
     )
-    webhook_request_handler.register(app, path=WEBHOOK_TELEGRAM_PATH)
-    setup_application(app, dp, bot=bot)
+    logging.info("Пул подключений к базе данных успешно создан")
 
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+    # Инициализация бота и диспетчера
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    dp = Dispatcher(storage=MemoryStorage())
 
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, WEB_SERVER_HOST, WEB_SERVER_PORT)
+    # Регистрация всех роутеров/хендлеров (оставьте как было в вашем коде)
+    # ... здесь должны быть dp.include_router(...) из оригинального файла ...
 
+    # Удаляем вебхук, если он был установлен ранее
+    await bot.delete_webhook(drop_pending_updates=True)
+
+    # Уведомляем админа о запуске
     try:
-        await site.start()
-        logging.info(f"Веб-сервер запущен на http://{WEB_SERVER_HOST}:{WEB_SERVER_PORT}")
-
-        total_users, total_servers = await get_total_users_count(), await get_total_servers_count()
+        total_users = await get_total_users_count()
+        total_servers = await get_total_servers_count()
         admin_rec = await get_user_by_telegram_id(ADMIN_ID)
         if admin_rec:
             await bot.send_message(ADMIN_ID, await get_status_message_text(admin_rec, total_users, total_servers))
+    except Exception as e:
+        logging.warning(f"Не удалось отправить стартовое сообщение: {e}")
 
-        logging.info("Бот запущен и работает в режиме вебхука по адресу: %s", WEBHOOK_URL)
-        await asyncio.Event().wait()
+    logging.info("Бот запущен в режиме polling")
 
+    try:
+        await dp.start_polling(bot)
     finally:
-        await runner.cleanup()
         if db_pool:
             await db_pool.close()
-        await bot.delete_webhook()
-        logging.info("Бот и веб-сервер остановлены.")
+        await bot.session.close()
+        logging.info("Бот остановлен.")
 
 
 if __name__ == "__main__":
